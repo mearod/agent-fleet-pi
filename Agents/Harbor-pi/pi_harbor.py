@@ -88,12 +88,15 @@ class AgentFleetPi(Pi):
         environment: BaseEnvironment,
         context: AgentContext,
     ) -> None:
-        if not self.model_name or "/" not in self.model_name:
-            raise ValueError("Model name must be in the format provider/model_name")
-
-        provider, model = self.model_name.split("/", 1)
-        if not provider or not model:
-            raise ValueError("Model name must be in the format provider/model_name")
+        provider = (
+            self._extra_env.get("PI_PROVIDER", "")
+            or os.environ.get("PI_PROVIDER", "")
+        ).strip()
+        model = (self.model_name or "").strip()
+        if not provider:
+            raise ValueError("PI_PROVIDER must not be empty")
+        if not model:
+            raise ValueError("Model name must not be empty")
 
         env = dict(self._extra_env)
         env.setdefault("PI_OFFLINE", "1")

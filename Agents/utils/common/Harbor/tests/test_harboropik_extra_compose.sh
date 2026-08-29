@@ -472,7 +472,7 @@ main() {
   assert_arg_pair "$pi_capture" "-i" "terminal-bench/fix-git"
   assert_arg_pair "$pi_capture" "--agent-import-path" "pi_harbor:AgentFleetPi"
   assert_exact_arg_absent "$pi_capture" "-a"
-  assert_arg_pair "$pi_capture" "-m" "llm.example/fake-model"
+  assert_arg_pair "$pi_capture" "-m" "fake-model"
   assert_arg_pair "$pi_capture" "--ak" "version=0.81.1"
   assert_exact_arg_absent "$pi_capture" "thinking=high"
   assert_arg_pair "$pi_capture" "--ae" "AGENT_FLEET_API_KEY=fake-llm-key"
