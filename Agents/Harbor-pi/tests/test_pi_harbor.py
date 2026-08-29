@@ -165,10 +165,51 @@ class AgentFleetPiTests(unittest.TestCase):
         agent = self.module.AgentFleetPi(model_name="test-model")
 
         with (
-            mock.patch.dict(os.environ, {"PI_PROVIDER": ""}),
+            mock.patch.dict(
+                os.environ,
+                {
+                    "PI_PROVIDER": "",
+                    "HARBOR_ANTHROPIC_BASE_URL": "",
+                    "BASE_URL": "",
+                },
+            ),
             self.assertRaisesRegex(ValueError, "PI_PROVIDER must not be empty"),
         ):
             asyncio.run(agent.run("solve", object(), object()))
+
+    def test_run_supports_legacy_provider_model_name(self) -> None:
+        agent = self.module.AgentFleetPi(model_name="legacy-provider/test-model")
+
+        with mock.patch.dict(
+            os.environ,
+            {
+                "PI_PROVIDER": "",
+                "HARBOR_ANTHROPIC_BASE_URL": "",
+                "BASE_URL": "",
+            },
+        ):
+            asyncio.run(agent.run("solve", object(), object()))
+
+        command = str(agent.agent_commands[-1]["command"])
+        self.assertIn("--provider legacy-provider", command)
+        self.assertIn("--model test-model", command)
+
+    def test_run_derives_provider_from_base_url(self) -> None:
+        agent = self.module.AgentFleetPi(model_name="test-model")
+
+        with mock.patch.dict(
+            os.environ,
+            {
+                "PI_PROVIDER": "",
+                "HARBOR_ANTHROPIC_BASE_URL": "",
+                "BASE_URL": "https://Gateway.Example.com/v1",
+            },
+        ):
+            asyncio.run(agent.run("solve", object(), object()))
+
+        command = str(agent.agent_commands[-1]["command"])
+        self.assertIn("--provider gateway.example.com", command)
+        self.assertIn("--model test-model", command)
 
     def test_run_preserves_slashes_in_model_id(self) -> None:
         model = "m-20260820192358-jsrtc/deepseekv4-flash-0731"
