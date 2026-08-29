@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -46,6 +47,7 @@ class RunScriptTest(unittest.TestCase):
                 "BROWSECOMP_SKIP_MCP_START": "1",
                 "BROWSECOMP_MCP_HOST_IP": "10.192.0.1",
                 "BASE_URL": "https://gateway.example.invalid/v1",
+                "AGENT_FLEET_CONFIG_LOADED_ROOT": str(REPO_ROOT),
             }
         )
         return env, source
@@ -93,6 +95,116 @@ class RunScriptTest(unittest.TestCase):
             )
             self.assertEqual(completed.returncode, 2)
             self.assertIn("requires BROWSECOMP_ENVIRONMENT_TYPE=docker", completed.stderr)
+
+    def test_direct_runner_loads_repository_configuration(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            root_path = Path(root)
+            copied_runner = root_path / "Tasks" / "BrowseComp-Plus" / "scripts" / "run.sh"
+            copied_runner.parent.mkdir(parents=True)
+            (root_path / "scripts").mkdir()
+            for source, destination in (
+                (RUNNER, copied_runner),
+                (REPO_ROOT / "scripts" / "prerequisites.sh", root_path / "scripts" / "prerequisites.sh"),
+                (REPO_ROOT / "scripts" / "config_loader.sh", root_path / "scripts" / "config_loader.sh"),
+                (REPO_ROOT / "scripts" / "script_utils.py", root_path / "scripts" / "script_utils.py"),
+            ):
+                shutil.copy2(source, destination)
+            (root_path / "config.env").write_text(
+                "AGENT=pi\nTOTAL_WORKERS=3\nBASE_URL=https://saved-gateway.example.invalid/v1\n",
+                encoding="utf-8",
+            )
+            env = os.environ.copy()
+            for name in (
+                "AGENT",
+                "TOTAL_WORKERS",
+                "BASE_URL",
+                "HARBOR_ANTHROPIC_BASE_URL",
+                "AGENT_FLEET_CONFIG_LOADED_ROOT",
+            ):
+                env.pop(name, None)
+            env.update(
+                {
+                    "AGENT_FLEET_PATHS_FILE": str(root_path / "missing-paths.env"),
+                    "BROWSECOMP_SOURCE_ROOT": str(root_path / "source"),
+                    "BROWSECOMP_CACHE_ROOT": str(root_path / "cache"),
+                    "BROWSECOMP_GROUND_TRUTH": str(root_path / "gold.jsonl"),
+                    "BROWSECOMP_INDEX_PATH": str(root_path / "index.pkl"),
+                    "BROWSECOMP_MCP_PORT": "8123",
+                    "BROWSECOMP_MCP_PUBLIC_URL": "http://10.192.0.1:8123/mcp",
+                }
+            )
+
+            completed = subprocess.run(
+                ["/bin/bash", str(copied_runner), "--dry-run"],
+                env=env,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertIn("agent=pi workers=3", completed.stdout)
+            self.assertIn("--allowed-host saved-gateway.example.invalid", completed.stdout)
+
+    def test_named_run_rejects_changed_selection_before_materializing(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            root_path = Path(root)
+            env, _ = self.fixture_env(root_path)
+            output = root_path / "output"
+            output.mkdir()
+            (output / "tasks.txt").write_text("different-task\n", encoding="utf-8")
+
+            completed = subprocess.run(
+                ["/bin/bash", str(RUNNER), "--prepare-only", "--task", "q1"],
+                env=env,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertNotEqual(completed.returncode, 0)
+            self.assertIn("set RESET_RUN=1 or use a new RUN_ID", completed.stderr)
+            self.assertFalse(
+                (output / "browsecomp-plus" / "task-manifest.json").exists()
+            )
+
+    def test_forwards_materialized_selection_to_harbor(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            root_path = Path(root)
+            env, _ = self.fixture_env(root_path)
+            env["BROWSECOMP_JUDGE_MODE"] = "none"
+            capture = root_path / "harbor-env.txt"
+            wrapper_dir = root_path / "bin"
+            wrapper_dir.mkdir()
+            bash_wrapper = wrapper_dir / "bash"
+            bash_wrapper.write_text(
+                """#!/bin/sh
+case "$1" in
+  */Agents/utils/common/Harbor/start.sh)
+    printf 'FLEET_TASKS=%s\\nTASK_SOURCE_FILE=%s\\n' "$FLEET_TASKS" "$TASK_SOURCE_FILE" > "$BROWSECOMP_HARBOR_CAPTURE"
+    exit 0
+    ;;
+esac
+exec /bin/bash "$@"
+""",
+                encoding="utf-8",
+            )
+            bash_wrapper.chmod(0o755)
+            env["PATH"] = f"{wrapper_dir}:{env['PATH']}"
+            env["BROWSECOMP_HARBOR_CAPTURE"] = str(capture)
+
+            completed = subprocess.run(
+                ["/bin/bash", str(RUNNER), "--task", "q1", "--agent", "pi"],
+                env=env,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            captured = capture.read_text(encoding="utf-8")
+            self.assertIn("FLEET_TASKS=q1", captured)
+            self.assertIn("browsecomp-plus/tasks.txt", captured)
 
     def test_dry_run_bypasses_proxy_for_host_services(self) -> None:
         with tempfile.TemporaryDirectory() as root:

@@ -84,6 +84,51 @@ class MaterializeTest(unittest.TestCase):
             )
             self.assertEqual(selected, ["q0"])
 
+    def test_rejects_changed_selection_before_overwriting_run_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            root_path = Path(root)
+            ground_truth = root_path / "gold.jsonl"
+            ground_truth.write_text(
+                "".join(
+                    json.dumps(
+                        {"query_id": task_id, "query": task_id, "answer": "a"}
+                    )
+                    + "\n"
+                    for task_id in ("q1", "q2")
+                ),
+                encoding="utf-8",
+            )
+            existing = root_path / "harbor-tasks.txt"
+            existing.write_text("q1\n", encoding="utf-8")
+            manifest = root_path / "manifest.json"
+            manifest.write_text('{"sentinel": true}\n', encoding="utf-8")
+
+            with self.assertRaisesRegex(ValueError, "set RESET_RUN=1"):
+                materialize(
+                    ground_truth,
+                    root_path / "tasks",
+                    ["q2"],
+                    root_path / "tasks.txt",
+                    manifest,
+                    existing_task_file=existing,
+                )
+
+            self.assertEqual(
+                json.loads(manifest.read_text(encoding="utf-8")),
+                {"sentinel": True},
+            )
+            self.assertFalse((root_path / "tasks.txt").exists())
+
+            selected = materialize(
+                ground_truth,
+                root_path / "tasks",
+                ["q1"],
+                root_path / "tasks.txt",
+                manifest,
+                existing_task_file=existing,
+            )
+            self.assertEqual(selected, ["q1"])
+
 
 if __name__ == "__main__":
     unittest.main()

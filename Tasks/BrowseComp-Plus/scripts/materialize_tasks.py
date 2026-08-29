@@ -26,6 +26,7 @@ def materialize(
     manifest_path: Path,
     limit: int = 0,
     allowed_hosts: list[str] | None = None,
+    existing_task_file: Path | None = None,
 ) -> list[str]:
     rows = load_questions(ground_truth, require_answer=True)
     by_id = {str(row["query_id"]): row for row in rows}
@@ -35,6 +36,21 @@ def materialize(
     missing = [task_id for task_id in selected if task_id not in by_id]
     if missing:
         raise ValueError(f"unknown BrowseComp query ids: {', '.join(missing)}")
+    if (
+        existing_task_file is not None
+        and existing_task_file.is_file()
+        and existing_task_file.stat().st_size > 0
+    ):
+        existing = [
+            line.strip()
+            for line in existing_task_file.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+        if existing != selected:
+            raise ValueError(
+                "task selection does not match existing Harbor task file: "
+                f"{existing_task_file}; set RESET_RUN=1 or use a new RUN_ID"
+            )
 
     template_root = BENCHMARK_DIR / "templates"
     instruction_template = (template_root / "instruction.md.template").read_text(encoding="utf-8")
@@ -87,6 +103,7 @@ def main() -> int:
     parser.add_argument("--tasks", default="")
     parser.add_argument("--limit", type=int, default=0)
     parser.add_argument("--allowed-host", action="append", default=[])
+    parser.add_argument("--existing-task-file", type=Path)
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
     selected = materialize(
@@ -97,6 +114,9 @@ def main() -> int:
         args.manifest.resolve(),
         limit=args.limit,
         allowed_hosts=args.allowed_host,
+        existing_task_file=(
+            args.existing_task_file.resolve() if args.existing_task_file else None
+        ),
     )
     if args.json:
         print(json.dumps({"task_count": len(selected), "task_ids": selected}, separators=(",", ":")))

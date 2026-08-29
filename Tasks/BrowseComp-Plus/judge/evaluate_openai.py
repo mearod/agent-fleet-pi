@@ -17,6 +17,14 @@ from typing import Any
 
 from openai import OpenAI
 
+BENCHMARK_DIR = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(BENCHMARK_DIR))
+from judge.cache import (  # noqa: E402
+    EVALUATION_CACHE_SCHEMA_VERSION,
+    evaluation_fingerprint,
+    load_cached_evaluation,
+)
+
 GRADER_TEMPLATE: str | None = None
 
 
@@ -203,9 +211,6 @@ def main() -> int:
 
     for path in sorted(args.input_dir.glob("*.json")):
         output = args.eval_dir / f"{path.stem}_eval.json"
-        if output.is_file() and not args.force:
-            evaluations.append(json.loads(output.read_text(encoding="utf-8")))
-            continue
         run = json.loads(path.read_text(encoding="utf-8"))
         query_id = str(run.get("query_id", ""))
         if query_id not in truth:
@@ -215,6 +220,21 @@ def main() -> int:
         prompt = grader_prompt(
             str(truth[query_id]["query"]), response, str(truth[query_id]["answer"])
         )
+        relevant = qrels.get(query_id, set())
+        fingerprint = evaluation_fingerprint(
+            run=run,
+            prompt=prompt,
+            relevant_docids=relevant,
+            model=args.model,
+            base_url=args.base_url,
+            api_mode=args.api_mode,
+            max_output_tokens=args.max_output_tokens,
+        )
+        if output.is_file() and not args.force:
+            cached = load_cached_evaluation(output, fingerprint)
+            if cached is not None:
+                evaluations.append(cached)
+                continue
         if completed:
             judge_text = call_judge(
                 client, args.model, prompt, args.api_mode, args.max_output_tokens
@@ -229,7 +249,6 @@ def main() -> int:
                 "error": "response incomplete or empty",
             }
         retrieved = {str(value) for value in run.get("retrieved_docids", [])}
-        relevant = qrels.get(query_id, set())
         cited = citations(response)
         metadata = run.get("metadata") or {}
         evaluation = {
@@ -257,6 +276,10 @@ def main() -> int:
                 else None,
                 "judge_model": args.model,
                 "api_mode": args.api_mode,
+            },
+            "evaluation_cache": {
+                "schema_version": EVALUATION_CACHE_SCHEMA_VERSION,
+                "fingerprint": fingerprint,
             },
         }
         output.write_text(

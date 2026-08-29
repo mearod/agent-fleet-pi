@@ -7,6 +7,9 @@ REPO_ROOT="$(cd "$BENCHMARK_DIR/../.." && pwd)"
 # shellcheck source=../../../scripts/prerequisites.sh
 source "$REPO_ROOT/scripts/prerequisites.sh"
 agent_fleet_prerequisite_init_path
+# shellcheck source=../../../scripts/config_loader.sh
+source "$REPO_ROOT/scripts/config_loader.sh"
+agent_fleet_load_config "$REPO_ROOT"
 
 if [[ -n "${BROWSECOMP_CONFIG:-}" ]]; then
   [[ -f "$BROWSECOMP_CONFIG" ]] || { echo "[ERROR] BROWSECOMP_CONFIG not found: $BROWSECOMP_CONFIG" >&2; exit 1; }
@@ -193,6 +196,9 @@ done
 if [[ -z "$TASKS" && "${MIN_TEST:-0}" =~ ^[1-9][0-9]*$ ]]; then
   materialize_cmd+=(--limit "$MIN_TEST")
 fi
+if [[ "${RESET_RUN:-0}" != 1 && "$VALIDATE_ONLY" != 1 ]]; then
+  materialize_cmd+=(--existing-task-file "$OUTPUT_PATH/tasks.txt")
+fi
 collect_cmd=(python3 "$SCRIPT_DIR/collect_results.py" --jobs-root "$HARBOR_JOBS_ROOT" --output-dir "$OFFICIAL_RUN_DIR" --task-manifest "$RUN_MANIFEST")
 evaluate_cmd=(python3 "$SCRIPT_DIR/evaluate.py" --source-root "$SOURCE_ROOT" --ground-truth "$GROUND_TRUTH" --input-dir "$OFFICIAL_RUN_DIR" --eval-dir "$EVAL_DIR")
 
@@ -240,6 +246,11 @@ fi
 
 "${prepare_cmd[@]}"
 "${materialize_cmd[@]}"
+HARBOR_TASK_SELECTION="$(
+  python3 -c 'from pathlib import Path; import sys; print(",".join(line.strip() for line in Path(sys.argv[1]).read_text(encoding="utf-8").splitlines() if line.strip()))' \
+    "$TASK_FILE"
+)"
+[[ -n "$HARBOR_TASK_SELECTION" ]] || { echo "[ERROR] materialized BrowseComp task selection is empty" >&2; exit 1; }
 if [[ "${BROWSECOMP_SKIP_MCP_START:-0}" != 1 ]]; then
   python3 "$BENCHMARK_DIR/mcp/launcher.py" start \
     --source-root "$SOURCE_ROOT" \
@@ -264,7 +275,7 @@ harbor_cmd=(
   "DATASET_NAME=auto"
   "DATASET_PATH=$DATASET_ROOT"
   "TASK_SOURCE_FILE=$TASK_FILE"
-  "FLEET_TASKS="
+  "FLEET_TASKS=$HARBOR_TASK_SELECTION"
   "AGENT=$AGENT_NAME"
   "TOTAL_WORKERS=$WORKERS"
   "HARBOR_N_CONCURRENT=$WORKERS"
