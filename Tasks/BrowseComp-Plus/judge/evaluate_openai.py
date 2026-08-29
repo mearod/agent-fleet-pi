@@ -11,7 +11,7 @@ import os
 import re
 import sys
 from collections import defaultdict
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -296,7 +296,7 @@ def main() -> int:
         "Calibration Error (%)": round(calibration_error(evaluations), 2),
         "Retriever": "Qwen/Qwen3-Embedding-0.6B (Agent Fleet FAISS MCP)",
         "Link": "change me when submitting",
-        "Evaluation Date": datetime.now(UTC).date().isoformat(),
+        "Evaluation Date": datetime.now(timezone.utc).date().isoformat(),
         "per_query_metrics": [
             {
                 "query_id": e["query_id"],
