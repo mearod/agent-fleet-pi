@@ -315,6 +315,8 @@ run_harboropik() {
   fi
 
   local log_file="$output_dir/$agent.log"
+  # Non-empty dependency URL sentinels prevent ignored developer config from
+  # leaking a machine-specific local dependency host into this contract test.
   if ! env -i \
     PATH="$fake_bin:/usr/bin:/bin:/usr/sbin:/sbin" \
     HOME="$output_dir/home" \
@@ -335,6 +337,8 @@ run_harboropik() {
     MIN_TEST_INCLUDE_TASK="fix-git" \
     HARBOR_CC_OPIK_ENABLE_HOOK="$hook_flag" \
     HARBOR_CC_PY_WHEEL_DIR_SOURCE="$wheel_dir" \
+    HARBOR_LOCAL_WHEEL_SERVER_URL="disabled" \
+    HARBOR_LOCAL_CLAUDE_TGZ_URL="disabled" \
     TRACE_PLUGIN_SOURCE_DIR="$trace_dir" \
     HARBOR_SKIP_DOCKERHUB_PREFLIGHT="1" \
     HARBOR_RUNS="$runs" \
