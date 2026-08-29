@@ -13,8 +13,37 @@ function textContent(content) {
 		.join("\n");
 }
 
+function normalizedSectionLine(line) {
+	return line
+		.replace(/^\s{0,3}#{1,6}\s+/, "")
+		.replace(/\*\*|__/g, "")
+		.trim();
+}
+
+function sectionValue(text, sectionName) {
+	const lines = text.split(/\r?\n/);
+	const sectionPattern = new RegExp(`^${sectionName}\\s*:?\\s*(.*)$`, "i");
+	const anySectionPattern = /^(?:Explanation|Exact Answer|Confidence)\s*:?/i;
+
+	for (let index = 0; index < lines.length; index += 1) {
+		const match = normalizedSectionLine(lines[index]).match(sectionPattern);
+		if (!match) continue;
+
+		if (match[1].trim()) return match[1].trim();
+
+		for (let next = index + 1; next < lines.length; next += 1) {
+			const value = normalizedSectionLine(lines[next]);
+			if (!value || /^```/.test(value)) continue;
+			if (anySectionPattern.test(value)) return "";
+			return value;
+		}
+	}
+
+	return "";
+}
+
 function hasCompleteBrowseCompAnswer(text) {
-	return /(?:^|\n)\s*Exact Answer:\s*\S/i.test(text) && /(?:^|\n)\s*Confidence:\s*\S/i.test(text);
+	return Boolean(sectionValue(text, "Exact Answer") && sectionValue(text, "Confidence"));
 }
 
 export default function (pi) {

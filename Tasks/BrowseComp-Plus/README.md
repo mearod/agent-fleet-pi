@@ -34,7 +34,9 @@ The default CPU retriever memory-maps the corpus and keeps the embedding model
 plus FAISS vectors resident; allow roughly 4 GB of host RAM for the shared MCP
 service. A remote embedding backend avoids loading the model weights locally,
 but the FAISS index and corpus remain host-side. All concurrent harness workers
-reuse that one process.
+reuse that one process. Search returns at most 512 tokenizer tokens per result,
+and `get_document` is hard-capped to the first 4096 tokenizer tokens so an
+outlier corpus document cannot exhaust an agent's context window.
 
 After the canary succeeds, omit `MIN_TEST` for all queries:
 

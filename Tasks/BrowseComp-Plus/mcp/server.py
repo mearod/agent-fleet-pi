@@ -12,6 +12,10 @@ from fastmcp import FastMCP
 BENCHMARK_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BENCHMARK_DIR))
 from retriever.faiss import QwenFaissRetriever  # noqa: E402
+from retriever.truncation import (  # noqa: E402
+    DOCUMENT_MAX_TOKENS,
+    truncate_text,
+)
 
 
 def main() -> int:
@@ -33,6 +37,9 @@ def main() -> int:
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--k", type=int, default=5)
     parser.add_argument("--snippet-max-tokens", type=int, default=512)
+    parser.add_argument(
+        "--document-max-tokens", type=int, default=DOCUMENT_MAX_TOKENS
+    )
     parser.add_argument("--max-length", type=int, default=8192)
     parser.add_argument(
         "--torch-dtype",
@@ -45,6 +52,8 @@ def main() -> int:
         parser.error("--embedding-api-timeout-seconds must be positive")
     if args.embedding_api_max_retries < 0:
         parser.error("--embedding-api-max-retries must be non-negative")
+    if args.document_max_tokens <= 0:
+        parser.error("--document-max-tokens must be positive")
 
     retriever = QwenFaissRetriever(
         args.index_path,
@@ -81,9 +90,21 @@ def main() -> int:
             candidate["snippet"] = text
         return candidates
 
-    @mcp.tool(name="get_document", description="Retrieve a full corpus document by docid.")
+    @mcp.tool(
+        name="get_document",
+        description=(
+            "Retrieve the first "
+            f"{args.document_max_tokens} tokens of a corpus document by docid."
+        ),
+    )
     def get_document(docid: str) -> dict[str, str] | None:
-        return retriever.get_document(docid)
+        document = retriever.get_document(docid)
+        if document is None:
+            return None
+        document["text"] = truncate_text(
+            document["text"], retriever.tokenizer, args.document_max_tokens
+        )
+        return document
 
     print(f"BrowseComp MCP listening at http://{args.host}:{args.port}/mcp", flush=True)
     mcp.run(

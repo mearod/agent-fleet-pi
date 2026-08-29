@@ -117,7 +117,7 @@ export default function (pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "get_document",
 		label: "BrowseComp document",
-		description: "Fetch the full fixed-corpus document for a docid returned by search.",
+		description: "Fetch the first 4096 tokens of a fixed-corpus document for a docid returned by search.",
 		parameters: Type.Object({ docid: Type.String({ description: "Document identifier" }) }),
 		async execute(_id, args) {
 			return callTool("get_document", args);

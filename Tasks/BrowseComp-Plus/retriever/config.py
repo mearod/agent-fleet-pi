@@ -7,6 +7,8 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from retriever.truncation import DOCUMENT_MAX_TOKENS
+
 
 @dataclass(frozen=True)
 class RetrieverConfig:
@@ -142,6 +144,8 @@ class RetrieverConfig:
             str(self.k),
             "--snippet-max-tokens",
             str(self.snippet_max_tokens),
+            "--document-max-tokens",
+            str(DOCUMENT_MAX_TOKENS),
             "--dataset-name",
             self.dataset_name,
             "--torch-dtype",
